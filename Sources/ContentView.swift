@@ -1,12 +1,7 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State private var reminders: [Reminder] = [
-        Reminder(title: "Morning standup", time: "9:00 AM"),
-        Reminder(title: "Take a break", time: "2:00 PM"),
-    ]
-    @State private var newTitle = ""
-    @State private var newTime = ""
+    @StateObject private var store = ReminderStore()
     @State private var showingAdd = false
 
     var body: some View {
@@ -14,25 +9,27 @@ struct ContentView: View {
             ZStack {
                 Color(red: 0.1, green: 0.1, blue: 0.18).ignoresSafeArea()
 
-                VStack(spacing: 0) {
-                    if reminders.isEmpty {
+                if store.reminders.isEmpty {
+                    VStack {
                         Spacer()
-                        Text("No reminders yet")
+                        Text("No reminders")
                             .foregroundColor(.gray)
                             .font(.subheadline)
                         Spacer()
-                    } else {
-                        List {
-                            ForEach($reminders) { $reminder in
-                                ReminderRow(reminder: $reminder)
-                                    .listRowBackground(Color(red: 0.09, green: 0.13, blue: 0.24))
-                                    .listRowSeparatorTint(Color.white.opacity(0.08))
-                            }
-                            .onDelete { reminders.remove(atOffsets: $0) }
-                        }
-                        .listStyle(.plain)
-                        .scrollContentBackground(.hidden)
                     }
+                } else {
+                    List {
+                        ForEach(store.reminders) { reminder in
+                            ReminderRow(reminder: reminder) {
+                                store.toggle(id: reminder.id)
+                            }
+                            .listRowBackground(Color(red: 0.09, green: 0.13, blue: 0.24))
+                            .listRowSeparatorTint(Color.white.opacity(0.08))
+                        }
+                        .onDelete { store.delete(at: $0) }
+                    }
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
                 }
             }
             .navigationTitle("Sly Reminders")
@@ -48,12 +45,11 @@ struct ContentView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarLeading) {
-                    EditButton()
-                        .foregroundColor(.purple)
+                    EditButton().foregroundColor(.purple)
                 }
             }
             .sheet(isPresented: $showingAdd) {
-                AddReminderSheet(reminders: $reminders, isPresented: $showingAdd)
+                AddReminderSheet(store: store, isPresented: $showingAdd)
             }
         }
         .preferredColorScheme(.dark)
@@ -61,11 +57,12 @@ struct ContentView: View {
 }
 
 struct ReminderRow: View {
-    @Binding var reminder: Reminder
+    let reminder: Reminder
+    let onToggle: () -> Void
 
     var body: some View {
         HStack(spacing: 14) {
-            Button(action: { reminder.done.toggle() }) {
+            Button(action: onToggle) {
                 Image(systemName: reminder.done ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
                     .foregroundColor(reminder.done ? .green : .gray)
@@ -83,7 +80,6 @@ struct ReminderRow: View {
                         .font(.caption)
                 }
             }
-
             Spacer()
         }
         .padding(.vertical, 6)
@@ -91,7 +87,7 @@ struct ReminderRow: View {
 }
 
 struct AddReminderSheet: View {
-    @Binding var reminders: [Reminder]
+    @ObservedObject var store: ReminderStore
     @Binding var isPresented: Bool
     @State private var title = ""
     @State private var time = ""
@@ -101,7 +97,6 @@ struct AddReminderSheet: View {
         NavigationStack {
             ZStack {
                 Color(red: 0.1, green: 0.1, blue: 0.18).ignoresSafeArea()
-
                 VStack(spacing: 16) {
                     TextField("What do you need to do?", text: $title)
                         .focused($titleFocused)
@@ -126,15 +121,13 @@ struct AddReminderSheet: View {
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { isPresented = false }
-                        .foregroundColor(.gray)
+                    Button("Cancel") { isPresented = false }.foregroundColor(.gray)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Add") {
-                        guard !title.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-                        let r = Reminder(title: title, time: time)
-                        NotificationManager.schedule(reminder: r)
-                        reminders.append(r)
+                        let t = title.trimmingCharacters(in: .whitespaces)
+                        guard !t.isEmpty else { return }
+                        store.add(Reminder(title: t, time: time))
                         isPresented = false
                     }
                     .foregroundColor(.purple)
